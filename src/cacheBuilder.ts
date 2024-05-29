@@ -13,7 +13,7 @@ const tokenContract = new ethers.Contract(CONTRACT_ADDRESS, tokenABI, provider);
 const pointsContract = new ethers.Contract(POINTS_CONTRACT_ADDRESS, pointsABI, provider);
 
 const limiter = new Bottleneck({
-  minTime: 12000, // 12 seconds
+  minTime: 10000, // 10 seconds
   maxConcurrent: 1,
 });
 
@@ -23,7 +23,7 @@ async function fetchOwner(tokenId: number) {
     const owner = await tokenContract.ownerOf(tokenId);
     await Token.findOneAndUpdate({ tokenId }, { owner: owner.toLowerCase() }, { upsert: true });
     console.log(`Token ${tokenId} cached with owner ${owner}`);
-    await fetchPoints(owner.toLowerCase()); // Fetch points immediately after fetching owner
+    await fetchPoints(owner); // Fetch points immediately after fetching owner
     await updateProgress(tokenId);
   } catch (error) {
     console.error(`Error fetching owner for token ${tokenId}:`, error);
@@ -33,10 +33,10 @@ async function fetchOwner(tokenId: number) {
 async function fetchPoints(address: string) {
   console.log(`Fetching points for address ${address}`);
   try {
-    const pointsWei = await pointsContract.getPoints(address);
-    const points = ethers.utils.formatEther(pointsWei); // Convert wei to ether
-    await Points.findOneAndUpdate({ address: address.toLowerCase() }, { points: parseFloat(points) }, { upsert: true });
-    console.log(`Points for address ${address} updated: ${points}`);
+    const points = await pointsContract.getPoints(address);
+    const pointsValue = parseFloat(ethers.utils.formatEther(points));
+    await Points.findOneAndUpdate({ address: address.toLowerCase() }, { points: pointsValue }, { upsert: true });
+    console.log(`Points for address ${address} updated: ${pointsValue}`);
   } catch (error) {
     console.error(`Error fetching points for address ${address}:`, error);
   }
@@ -129,7 +129,7 @@ export async function prioritizeNewTokenPoints(tokenId: number) {
   try {
     const token = await Token.findOne({ tokenId });
     if (token) {
-      await fetchPoints(token.owner.toLowerCase());
+      await fetchPoints(token.owner);
     }
   } catch (error) {
     console.error(`Error prioritizing points for new token ${tokenId}:`, error);
@@ -138,8 +138,8 @@ export async function prioritizeNewTokenPoints(tokenId: number) {
 
 export async function fetchAllPoints() {
   try {
-    const pointsData = await Points.find().sort({ points: -1 }).limit(100); // Limit to top 100
-    return pointsData.map((data) => ({ address: data.address, points: parseFloat(data.points) }));
+    const pointsData = await Points.find().sort({ points: -1 }).limit(100); // Limit to top 100 points
+    return pointsData.map((data) => ({ address: data.address, points: data.points }));
   } catch (error) {
     console.error("Error fetching all points:", error);
     return null;
@@ -148,8 +148,8 @@ export async function fetchAllPoints() {
 
 export async function getPointsForAddress(address: string) {
   try {
-    const pointsData = await Points.findOne({ address: address.toLowerCase() });
-    return pointsData ? parseFloat(pointsData.points) : 0;
+    const pointsData = await Points.findOne({ address });
+    return pointsData ? pointsData.points : 0;
   } catch (error) {
     console.error(`Error fetching points for address ${address}:`, error);
     return 0;
@@ -161,7 +161,7 @@ setInterval(async () => {
     const addresses = await Token.find().distinct('owner');
     for (let i = 0; i < addresses.length; i += 5) {
       const addressBatch = addresses.slice(i, i + 5);
-      await Promise.all(addressBatch.map(address => limiter.schedule(() => fetchPoints(address.toLowerCase()))));
+      await Promise.all(addressBatch.map(address => limiter.schedule(() => fetchPoints(address))));
       await new Promise(resolve => setTimeout(resolve, 60000)); // Wait 1 minute before the next batch
     }
   } catch (error) {
