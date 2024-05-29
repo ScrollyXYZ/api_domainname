@@ -24,7 +24,7 @@ app.get('/points-leaderboard', async (req, res) => {
   try {
     const leaderboard = await fetchAllPoints();
     if (leaderboard) {
-      res.json({ leaderboard: leaderboard.slice(0, 100) });
+      res.json({ leaderboard });
     } else {
       res.status(500).send('Error fetching leaderboard');
     }
@@ -35,7 +35,7 @@ app.get('/points-leaderboard', async (req, res) => {
 
 app.get('/points/:address', async (req, res) => {
   try {
-    const address = req.params.address;
+    const address = req.params.address.toLowerCase();
     const points = await getPointsForAddress(address);
     res.json({ address, points });
   } catch (error) {
