@@ -3,8 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import './config/database';
 import routes from './routes/index';
-import { buildCache, monitorIdCounter, fetchAllPoints, getPointsForAddress } from './cacheBuilder';
-import './eventListener';
+import { buildCache, monitorIdCounter } from './cacheBuilder';
+import { updateAllPoints, fetchAllPoints, getPointsForAddress } from './updatePoints';
 
 dotenv.config();
 
@@ -16,8 +16,21 @@ app.use(express.json());
 app.use('/api', routes);
 
 app.get('/trigger-cache', async (req, res) => {
-  await buildCache();
-  res.send('Cache build process triggered.');
+  try {
+    await buildCache();
+    res.send('Cache build process triggered.');
+  } catch (error) {
+    res.status(500).send('Error triggering cache build');
+  }
+});
+
+app.get('/trigger-points-update', async (req, res) => {
+  try {
+    await updateAllPoints();
+    res.send('Points update process triggered.');
+  } catch (error) {
+    res.status(500).send('Error triggering points update');
+  }
 });
 
 app.get('/points-leaderboard', async (req, res) => {
@@ -46,4 +59,5 @@ app.get('/points/:address', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
   monitorIdCounter();
+  updateAllPoints(); // Initial points update
 });

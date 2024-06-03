@@ -1,5 +1,6 @@
 import express from 'express';
 import Token from '../models/token';
+import PointsUpdateStatus from '../models/pointsUpdateStatus';  
 import { buildCache } from '../cacheBuilder';
 
 const router = express.Router();
@@ -18,7 +19,7 @@ router.get('/tokens', async (req, res) => {
     res.json({ totalTokens: tokens.length, tokens });
   } catch (error) {
     console.error('Error fetching tokens:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Error fetching tokens' });
   }
 });
 
@@ -28,7 +29,7 @@ router.get('/database-status', async (req, res) => {
     res.json({ totalTokens });
   } catch (error) {
     console.error('Error fetching database status:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Error fetching database status' });
   }
 });
 
@@ -38,7 +39,21 @@ router.get('/trigger-cache', async (req, res) => {
     res.send('Cache build process triggered.');
   } catch (error) {
     console.error('Error triggering cache build:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Error triggering cache build' });
+  }
+});
+
+router.get('/points-update-status', async (req, res) => {
+  try {
+    const status = await PointsUpdateStatus.findOne();
+    if (status) {
+      res.json(status);
+    } else {
+      res.status(404).json({ error: 'No update status found' });
+    }
+  } catch (error) {
+    console.error('Error fetching points update status:', error);
+    res.status(500).json({ error: 'Error fetching points update status' });
   }
 });
 
