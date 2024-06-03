@@ -26,22 +26,13 @@ async function fetchOwner(tokenId: number) {
 }
 
 async function updateProgress(tokenId: number) {
-  try {
-    await Progress.findOneAndUpdate({}, { lastProcessedTokenId: tokenId }, { upsert: true });
-    console.log(`Progress updated to token ${tokenId}`);
-  } catch (error: any) {
-    console.error(`Error updating progress for token ${tokenId}:`, error.message || error);
-  }
+  await Progress.findOneAndUpdate({}, { lastProcessedTokenId: tokenId }, { upsert: true });
+  console.log(`Progress updated to token ${tokenId}`);
 }
 
 async function getLastProcessedTokenId(): Promise<number> {
-  try {
-    const progress = await Progress.findOne();
-    return progress ? progress.lastProcessedTokenId : 0;
-  } catch (error: any) {
-    console.error('Error getting last processed token ID:', error.message || error);
-    return 0;
-  }
+  const progress = await Progress.findOne();
+  return progress ? progress.lastProcessedTokenId : 0;
 }
 
 export async function buildCache() {

@@ -1,10 +1,10 @@
 import { ethers } from 'ethers';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import Points from './models/points';
 import Token from './models/token';
 import { ABI as pointsABI } from './config/pointsAbi';
 import Bottleneck from 'bottleneck';
+import Progress from './models/progress';
 
 const POINTS_CONTRACT_ADDRESS = process.env.POINTS_CONTRACT_ADDRESS || '';
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
@@ -14,8 +14,6 @@ const limiter = new Bottleneck({
   minTime: 20000, // 20 seconds
   maxConcurrent: 1,
 });
-
-const progressFilePath = './pointsProgress.txt';
 
 async function fetchPoints(address: string, index: number, total: number) {
   console.log(`Fetching points for address ${address} (${index}/${total})`);
@@ -29,45 +27,55 @@ async function fetchPoints(address: string, index: number, total: number) {
   }
 }
 
-function readProgress(): number {
-  if (fs.existsSync(progressFilePath)) {
-    const data = fs.readFileSync(progressFilePath, 'utf8');
-    const parsed = parseInt(data, 10);
-    if (!isNaN(parsed)) {
-      return parsed;
-    }
-  }
-  return 0;
+async function getProgress(): Promise<number> {
+  const progress = await Progress.findOne();
+  return progress ? progress.lastUpdatedIndex : 0;
 }
 
-function writeProgress(index: number) {
-  fs.writeFileSync(progressFilePath, index.toString(), 'utf8');
+async function updateProgress(index: number) {
+  await Progress.findOneAndUpdate({}, { lastUpdatedIndex: index }, { upsert: true });
+}
+
+async function acquireLock(): Promise<boolean> {
+  const result = await Progress.findOneAndUpdate(
+    { lock: { $ne: true } }, // Ensure lock is not held
+    { $set: { lock: true } } // Acquire lock
+  );
+  return result != null;
+}
+
+async function releaseLock() {
+  await Progress.findOneAndUpdate({}, { $set: { lock: false } });
 }
 
 export async function updateAllPoints() {
+  if (!await acquireLock()) {
+    console.log('Another instance is already running.');
+    return;
+  }
+
   const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    session.startTransaction();
     const addresses = await Token.find().distinct('owner');
     const totalAddresses = addresses.length;
     console.log(`Total addresses to verify: ${totalAddresses}`);
-    let lastUpdatedIndex = readProgress();
 
+    let lastUpdatedIndex = await getProgress();
     console.log(`Resuming update from index: ${lastUpdatedIndex}`);
 
     for (let i = lastUpdatedIndex; i < totalAddresses; i++) {
       console.log(`Updating points for address at index ${i + 1}/${totalAddresses}`);
       await limiter.schedule(() => fetchPoints(addresses[i], i + 1, totalAddresses));
 
-      // Always update the progress file after each address
-      writeProgress(i + 1);
+      await updateProgress(i + 1);
       console.log(`Progress updated to index ${i + 1}`);
 
       await new Promise(resolve => setTimeout(resolve, 20000)); // Wait 20 seconds before the next update
     }
 
-    // Reset lastUpdatedIndex after a full cycle
-    writeProgress(0);
+    await updateProgress(0);
     console.log(`Completed full update cycle. Resetting lastUpdatedIndex to 0.`);
     await session.commitTransaction();
   } catch (error: any) {
@@ -75,6 +83,7 @@ export async function updateAllPoints() {
     console.error('Error in points update loop:', error.message || error);
   } finally {
     session.endSession();
+    await releaseLock();
   }
 }
 
